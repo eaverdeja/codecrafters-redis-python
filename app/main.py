@@ -1,7 +1,15 @@
 import socket
 
-BUFFER_SIZE_BYTES = 1024
+BUFFER_SIZE_BYTES = 4096
 CRLF = "\r\n"
+
+
+def process_connection(conn: socket.SocketType):
+    while request := conn.recv(BUFFER_SIZE_BYTES).decode():
+        lines = request.split(CRLF)
+        if "PING" in lines:
+            response = f"+PONG{CRLF}".encode()
+            conn.send(response)
 
 
 def main():
@@ -10,17 +18,9 @@ def main():
     print("Listening on port 6379")
     try:
         while True:
-            connection, _addr = server_socket.accept()
-
-            request = connection.recv(BUFFER_SIZE_BYTES).decode()
-            commands = request.split("\n")
-            for command in commands:
-                lines = command.split(CRLF)
-                if "PING" in lines:
-                    response = f"+PONG{CRLF}".encode()
-                    connection.send(response)
-
-            connection.close()
+            conn, _addr = server_socket.accept()
+            process_connection(conn)
+            conn.close()
     except KeyboardInterrupt:
         print("Shutting down server")
     finally:

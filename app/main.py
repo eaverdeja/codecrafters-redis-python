@@ -13,10 +13,12 @@ def main():
             connection, _addr = server_socket.accept()
 
             request = connection.recv(BUFFER_SIZE_BYTES).decode()
-            lines = request.split(CRLF)
-            if "PING" in lines:
-                response = f"+PONG{CRLF}".encode()
-                connection.send(response)
+            commands = request.split("\n")
+            for command in commands:
+                lines = command.split(CRLF)
+                if "PING" in lines:
+                    response = f"+PONG{CRLF}".encode()
+                    connection.send(response)
 
             connection.close()
     except KeyboardInterrupt:

@@ -1,7 +1,9 @@
 import socket
+from concurrent.futures import ThreadPoolExecutor
 
 BUFFER_SIZE_BYTES = 4096
 CRLF = "\r\n"
+MAX_WORKERS = 5
 
 
 def process_connection(conn: socket.SocketType):
@@ -10,6 +12,7 @@ def process_connection(conn: socket.SocketType):
         if "PING" in lines:
             response = f"+PONG{CRLF}".encode()
             conn.send(response)
+    conn.close()
 
 
 def main():
@@ -17,10 +20,10 @@ def main():
 
     print("Listening on port 6379")
     try:
-        while True:
-            conn, _addr = server_socket.accept()
-            process_connection(conn)
-            conn.close()
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            while True:
+                conn, _addr = server_socket.accept()
+                executor.submit(process_connection, conn)
     except KeyboardInterrupt:
         print("Shutting down server")
     finally:

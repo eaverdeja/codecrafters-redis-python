@@ -2,6 +2,7 @@ import asyncio
 
 from .parser import RedisProtocolParser
 from .encoders import encode_bulk_string, encode_simple_string
+from .datastore import Datastore
 from .constants import BUFFER_SIZE_BYTES
 
 global datastore
@@ -14,11 +15,15 @@ def process_query(query: list[str]) -> str:
         case ["ECHO", *rest]:
             message = " ".join(rest)
             response = encode_bulk_string(message)
+        case ["SET", key, value, "PX", expires_in]:
+            print(expires_in)
+            datastore.write(key, value, expires_in)
+            response = encode_simple_string("OK")
         case ["SET", key, value]:
             datastore[key] = value
             response = encode_simple_string("OK")
         case ["GET", key]:
-            value = datastore.get(key)
+            value = datastore[key]
             if value:
                 response = encode_bulk_string(value)
             else:
@@ -57,7 +62,7 @@ async def main():
 
 
 if __name__ == "__main__":
-    datastore = dict()
+    datastore = Datastore()
 
     try:
         asyncio.run(main())

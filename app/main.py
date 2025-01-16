@@ -9,7 +9,7 @@ global datastore
 
 def process_query(query: list[str]) -> str:
     match query:
-        case ["PING", _]:
+        case ["PING"]:
             response = encode_simple_string("PONG")
         case ["ECHO", *rest]:
             message = " ".join(rest)

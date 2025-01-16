@@ -43,6 +43,7 @@ async def process_connection(
         print(f"Error processing connection: {e.__class__.__name__} - {e}")
     finally:
         writer.close()
+        await writer.wait_closed()
 
 
 async def main():

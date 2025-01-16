@@ -2,7 +2,7 @@ import asyncio
 import argparse
 from dataclasses import dataclass
 
-from .parser import RedisProtocolParser
+from .parsers import RedisProtocolParser
 from .encoders import encode_bulk_string, encode_simple_string, encode_array
 from .datastore import Datastore
 from .constants import BUFFER_SIZE_BYTES

@@ -1,17 +1,23 @@
 import socket
 from concurrent.futures import ThreadPoolExecutor
 
+from .parser import RedisProtocolParser
+
 BUFFER_SIZE_BYTES = 4096
 CRLF = "\r\n"
 MAX_WORKERS = 5
 
 
 def process_connection(conn: socket.SocketType):
-    while request := conn.recv(BUFFER_SIZE_BYTES).decode():
-        lines = request.split(CRLF)
-        if "PING" in lines:
-            response = f"+PONG{CRLF}".encode()
-            conn.send(response)
+    while request := conn.recv(BUFFER_SIZE_BYTES):
+        query = RedisProtocolParser(data=request).parse()
+
+        if "PING" in query:
+            response = f"+PONG{CRLF}"
+        elif "ECHO" in query:
+            message = " ".join(query[1:])
+            response = f"${len(message)}{CRLF}{message}{CRLF}"
+        conn.send(response.encode())
     conn.close()
 
 

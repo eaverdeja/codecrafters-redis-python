@@ -9,3 +9,9 @@ def encode_bulk_string(value: str) -> str:
     if value == "-1":
         return f"$-1{CRLF}"
     return f"${len(value)}{CRLF}{value}{CRLF}"
+
+
+def encode_array(values: list) -> str:
+    length = len(values)
+    message = "".join(values)
+    return f"*{length}{CRLF}{message}"

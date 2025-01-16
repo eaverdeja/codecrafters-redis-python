@@ -1,9 +1,32 @@
 import asyncio
 
 from .parser import RedisProtocolParser
+from .encoders import encode_bulk_string, encode_simple_string
+from .constants import BUFFER_SIZE_BYTES
 
-BUFFER_SIZE_BYTES = 4096
-CRLF = "\r\n"
+global datastore
+
+
+def process_query(query: list[str]) -> str:
+    match query:
+        case ["PING", _]:
+            response = encode_simple_string("PONG")
+        case ["ECHO", *rest]:
+            message = " ".join(rest)
+            response = encode_bulk_string(message)
+        case ["SET", key, value]:
+            datastore[key] = value
+            response = encode_simple_string("OK")
+        case ["GET", key]:
+            value = datastore.get(key)
+            if value:
+                response = encode_bulk_string(value)
+            else:
+                response = encode_bulk_string("-1")
+        case _:
+            raise Exception("Unsupported command")
+
+    return response
 
 
 async def process_connection(
@@ -12,19 +35,12 @@ async def process_connection(
     try:
         while data := await reader.read(BUFFER_SIZE_BYTES):
             query = RedisProtocolParser(data=data).parse()
-
-            if "PING" in query:
-                response = f"+PONG{CRLF}"
-            elif "ECHO" in query:
-                message = " ".join(query[1:])
-                response = f"${len(message)}{CRLF}{message}{CRLF}"
-            else:
-                raise Exception("Unsupported command")
+            response = process_query(query)
 
             writer.write(response.encode())
             await writer.drain()
     except Exception as e:
-        print(f"Error processing connection: {e}")
+        print(f"Error processing connection: {e.__class__.__name__} - {e}")
     finally:
         writer.close()
 
@@ -40,6 +56,8 @@ async def main():
 
 
 if __name__ == "__main__":
+    datastore = dict()
+
     try:
         asyncio.run(main())
     except KeyboardInterrupt:

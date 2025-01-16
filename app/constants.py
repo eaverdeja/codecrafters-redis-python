@@ -1,0 +1,2 @@
+BUFFER_SIZE_BYTES = 4096
+CRLF = "\r\n"

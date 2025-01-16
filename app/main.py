@@ -15,8 +15,7 @@ def process_query(query: list[str]) -> str:
         case ["ECHO", *rest]:
             message = " ".join(rest)
             response = encode_bulk_string(message)
-        case ["SET", key, value, "PX", expires_in]:
-            print(expires_in)
+        case ["SET", key, value, "px", expires_in]:
             datastore.write(key, value, expires_in)
             response = encode_simple_string("OK")
         case ["SET", key, value]:

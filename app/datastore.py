@@ -6,7 +6,7 @@ from time import time
 @dataclass
 class Container:
     value: Any
-    expiry: int | None
+    expiry: int | None = None
 
 
 class Datastore(dict):
@@ -27,6 +27,6 @@ class Datastore(dict):
         return super().__setitem__(key, value)
 
     def write(self, key, value, expires_in):
-        expiry = time() + int(expires_in)
+        expiry = time() + int(expires_in) / 1000
         container = Container(value=value, expiry=expiry)
         self[key] = container

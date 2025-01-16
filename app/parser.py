@@ -47,7 +47,7 @@ class RedisProtocolParser:
         string_length = int(line[1:])
 
         # Null bulk string
-        if string_length == 1:
+        if string_length == -1:
             return None
 
         content_line = self.data.popleft()

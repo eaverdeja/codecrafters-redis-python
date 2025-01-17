@@ -2,6 +2,7 @@ import asyncio
 import argparse
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from .parsers import RedisProtocolParser, RDBParser
 from .encoders import encode_bulk_string, encode_simple_string, encode_array
@@ -35,7 +36,8 @@ class RedisServer:
                 self.datastore[key] = value
                 response = encode_simple_string("OK")
             case ["GET", key]:
-                value = self.datastore[key]
+                records = self._get_records_from_rdb()
+                value = self.datastore[key] or records.get(key)
                 if value:
                     response = encode_bulk_string(value)
                 else:
@@ -50,21 +52,28 @@ class RedisServer:
                     raise Exception("Unknown config")
                 response = encode_array(data)
             case ["KEYS", _pattern]:
-                file_path = Path(self.rdb_config.directory) / self.rdb_config.filename
-                try:
-                    parser = RDBParser.from_file(file_path)
-                    records = parser.parse()
-                except FileNotFoundError:
-                    # If the file does not exist,
-                    # treat it as an empty DB
-                    records = {}
-
+                records = self._get_records_from_rdb()
                 keys = list(records.keys()) + list(self.datastore.keys())
+
                 response = encode_array([encode_bulk_string(key) for key in keys])
             case _:
                 raise Exception(f"Unsupported command: {query}")
 
         return response
+
+    def _get_records_from_rdb(self) -> dict[str, Any]:
+        if not self.rdb_config.directory or not self.rdb_config.filename:
+            return {}
+
+        file_path = Path(self.rdb_config.directory) / self.rdb_config.filename
+        try:
+            parser = RDBParser.from_file(file_path)
+            records = parser.parse()
+        except FileNotFoundError:
+            # If the file does not exist,
+            # treat it as an empty DB
+            records = {}
+        return records
 
     async def _process_connection(
         self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter

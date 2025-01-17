@@ -27,7 +27,6 @@ class RedisServer:
         self.port = port
         self.datastore = datastore
         self.rdb_config = rdb_config
-        self.server: RedisServer = None
         self.info = {"role": "master"}
         if replica_of:
             self.info["role"] = "slave"

@@ -17,7 +17,8 @@ class RDBConfig:
 
 
 class RedisServer:
-    def __init__(self, datastore: Datastore, rdb_config: RDBConfig):
+    def __init__(self, port: int, datastore: Datastore, rdb_config: RDBConfig):
+        self.port = port
         self.datastore = datastore
         self.rdb_config = rdb_config
         self.server: RedisServer = None
@@ -97,10 +98,10 @@ class RedisServer:
 
     async def execute(self):
         server = await asyncio.start_server(
-            self._process_connection, host="localhost", port=6379
+            self._process_connection, host="localhost", port=self.port
         )
 
-        print("Listening on port 6379")
+        print(f"Listening on port {self.port}")
         try:
             await server.serve_forever()
         except asyncio.CancelledError:
@@ -111,9 +112,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Simple Redis server")
     parser.add_argument("--dir", type=str, help="The directory of the RDB file")
     parser.add_argument("--dbfilename", type=str, help="The name of the RDB file")
+    parser.add_argument(
+        "--port", type=int, help="The port to run on. Defaults to 6379", default=6379
+    )
     args = parser.parse_args()
 
     server = RedisServer(
+        port=args.port,
         datastore=Datastore(),
         rdb_config=RDBConfig(directory=args.dir, filename=args.dbfilename),
     )

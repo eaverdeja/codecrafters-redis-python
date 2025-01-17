@@ -22,6 +22,11 @@ class RedisServer:
         self.rdb_config = rdb_config
         self.server: RedisServer = None
 
+        # Merge RDB with in-memory datastore
+        records = self._get_records_from_rdb()
+        for key, value in records.items():
+            self.datastore[key] = value
+
     def _process_query(self, query: list[str]) -> str:
         match query:
             case ["PING"]:
@@ -36,8 +41,7 @@ class RedisServer:
                 self.datastore[key] = value
                 response = encode_simple_string("OK")
             case ["GET", key]:
-                records = self._get_records_from_rdb()
-                value = self.datastore[key] or records.get(key)
+                value = self.datastore[key]
                 if value:
                     response = encode_bulk_string(value)
                 else:
@@ -52,8 +56,7 @@ class RedisServer:
                     raise Exception("Unknown config")
                 response = encode_array(data)
             case ["KEYS", _pattern]:
-                records = self._get_records_from_rdb()
-                keys = list(records.keys()) + list(self.datastore.keys())
+                keys = self.datastore.keys()
 
                 response = encode_array([encode_bulk_string(key) for key in keys])
             case _:

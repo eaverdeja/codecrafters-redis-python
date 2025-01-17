@@ -1,6 +1,8 @@
 from collections import deque
 import builtins
 
+from .utils import Container
+
 
 class RedisProtocolError(Exception):
     pass
@@ -73,6 +75,8 @@ class RDBParser:
     DATABASE_START_MARKER = 0xFE
     HASH_TABLE_MARKER = 0xFB
     EOF_MARKER = 0xFF
+    EXPIRY_IN_SECONDS_MARKER = 0xFD
+    EXPIRY_IN_MILLISECONDS_MARKER = 0xFC
 
     def __init__(self, data: bytes):
         self.buffer = data
@@ -143,13 +147,32 @@ class RDBParser:
             if type_byte == self.EOF_MARKER:
                 break
 
+            expiry = self._parse_expiry(type_byte)
+            if expiry:
+                # If there was expiry data, the byte that describes
+                # the data type is the next byte
+                type_byte = self._read_byte()
+
             key = self._parse_string()
             value = self._parse_string()
-            result[key] = value
+            result[key] = Container(value=value, expiry=expiry)
 
         return result
 
+    def _parse_expiry(self, type_byte: int) -> float | None:
+        # https://rdb.fnordig.de/file_format.html#key-expiry-timestamp
+        expiration_data = None
+        if type_byte == self.EXPIRY_IN_SECONDS_MARKER:
+            expiration_data = self._read_bytes(4)
+        elif type_byte == self.EXPIRY_IN_MILLISECONDS_MARKER:
+            expiration_data = self._read_bytes(8)
+
+        if expiration_data:
+            return int.from_bytes(expiration_data, byteorder="little") / 1e3
+
     def _parse_string(self):
+        # https://rdb.fnordig.de/file_format.html#string-encoding
+        # See "Length Prefixed String"
         length_type = self._read_byte()
         length, data_type = self._parse_length(length_type)
         data = self._read_bytes(length)

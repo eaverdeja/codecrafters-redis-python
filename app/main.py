@@ -2,6 +2,8 @@ import asyncio
 import argparse
 from dataclasses import dataclass
 from pathlib import Path
+import random
+import string
 
 from .parsers import RedisProtocolParser, RDBParser
 from .encoders import encode_bulk_string, encode_simple_string, encode_array
@@ -27,9 +29,16 @@ class RedisServer:
         self.port = port
         self.datastore = datastore
         self.rdb_config = rdb_config
-        self.info = {"role": "master"}
+        self.info = {}
         if replica_of:
             self.info["role"] = "slave"
+        else:
+            self.info["role"] = "master"
+
+        if self.info["role"] == "master":
+            alphanumerics = string.ascii_letters + string.digits
+            self.info["master_replid"] = "".join(random.choices(alphanumerics, k=40))
+            self.info["master_repl_offset"] = 0
 
         # Merge RDB with in-memory datastore
         records = self._get_records_from_rdb()

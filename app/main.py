@@ -61,6 +61,11 @@ class RedisServer:
                 keys = self.datastore.keys()
 
                 response = encode_array([encode_bulk_string(key) for key in keys])
+            case ["INFO", _section]:
+                info = {"role": "master"}
+
+                encoded_info = [f"{key}:{value}" for key, value in info.items()]
+                response = encode_bulk_string("\n".join(encoded_info))
             case _:
                 raise Exception(f"Unsupported command: {query}")
 

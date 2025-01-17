@@ -33,6 +33,8 @@ class RedisProtocolParser:
             return self._parse_array(line)
         elif line.startswith(b"$"):
             return self._parse_bulk_string(line)
+        elif line.startswith(b"+"):
+            return self._parse_simple_string(line)
         else:
             raise RedisProtocolError(f"Unsupported data type: {line}")
 
@@ -64,6 +66,10 @@ class RedisProtocolParser:
             )
 
         return content_line.decode()
+
+    def _parse_simple_string(self, line: bytes):
+        # Simply strip the first char (a $)
+        return line.decode()[1:]
 
 
 class RDBParser:

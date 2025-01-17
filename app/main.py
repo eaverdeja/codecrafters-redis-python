@@ -29,8 +29,13 @@ class RedisServer:
         self.port = port
         self.datastore = datastore
         self.rdb_config = rdb_config
+        self.replica_of = replica_of
         self.info = {}
-        if replica_of:
+
+        self._setup()
+
+    def _setup(self):
+        if self.replica_of:
             self.info["role"] = "slave"
         else:
             self.info["role"] = "master"
@@ -116,10 +121,20 @@ class RedisServer:
             writer.close()
             await writer.wait_closed()
 
+    async def _connect_to_master(self):
+        host, port = self.replica_of.split(" ")
+        _reader, writer = await asyncio.open_connection(host, port)
+
+        request = encode_array([encode_simple_string("PING")])
+        writer.write(request.encode())
+        await writer.drain()
+
     async def execute(self):
         server = await asyncio.start_server(
             self._process_connection, host="localhost", port=self.port
         )
+        if self.replica_of:
+            await self._connect_to_master()
 
         print(f"Listening on port {self.port}")
         try:

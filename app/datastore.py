@@ -19,8 +19,3 @@ class Datastore(dict):
         if not isinstance(value, Container):
             value = Container(value=value)
         return super().__setitem__(key, value)
-
-    def write(self, key, value, expires_in):
-        expiry = time() + int(expires_in) / 1000
-        container = Container(value=value, expiry=expiry)
-        self[key] = container

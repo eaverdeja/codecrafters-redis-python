@@ -2,12 +2,12 @@ import asyncio
 import argparse
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from .parsers import RedisProtocolParser, RDBParser
 from .encoders import encode_bulk_string, encode_simple_string, encode_array
 from .datastore import Datastore
 from .constants import BUFFER_SIZE_BYTES
+from .utils import Container, calculate_expiry
 
 
 @dataclass
@@ -35,7 +35,8 @@ class RedisServer:
                 message = " ".join(rest)
                 response = encode_bulk_string(message)
             case ["SET", key, value, "px", expires_in]:
-                self.datastore.write(key, value, expires_in)
+                expiry = calculate_expiry(expires_in)
+                self.datastore[key] = Container(value=value, expiry=expiry)
                 response = encode_simple_string("OK")
             case ["SET", key, value]:
                 self.datastore[key] = value
@@ -64,7 +65,7 @@ class RedisServer:
 
         return response
 
-    def _get_records_from_rdb(self) -> dict[str, Any]:
+    def _get_records_from_rdb(self) -> dict[str, Container]:
         if not self.rdb_config.directory or not self.rdb_config.filename:
             return {}
 

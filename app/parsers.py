@@ -1,7 +1,12 @@
 from collections import deque
+import builtins
 
 
 class RedisProtocolError(Exception):
+    pass
+
+
+class RDBProtocolError(Exception):
     pass
 
 
@@ -57,3 +62,137 @@ class RedisProtocolParser:
             )
 
         return content_line.decode()
+
+
+class RDBParser:
+    MAGIC_STRING = b"REDIS"
+    VERSION_SIZE = 4
+
+    # See https://rdb.fnordig.de/file_format.html#op-codes
+    METADATA_FIELD_MARKER = 0xFA
+    DATABASE_START_MARKER = 0xFE
+    HASH_TABLE_MARKER = 0xFB
+    EOF_MARKER = 0xFF
+
+    def __init__(self, data: bytes):
+        self.buffer = data
+        self.pos = 0
+
+    @classmethod
+    def from_file(cls, file_path: str):
+        with open(file_path, "rb") as file:
+            return cls(file.read())
+
+    def parse(self):
+        self._parse_header()
+        self._parse_metadata()
+        self._parse_database_subsection()
+        kv = self._parse_key_value_pairs()
+
+        return kv
+
+    def _parse_header(self):
+        magic_string = self._read_bytes(len(self.MAGIC_STRING))
+        if magic_string != self.MAGIC_STRING:
+            raise RDBProtocolError(
+                f"Expected magic string to be {self.MAGIC_STRING}, got {magic_string}"
+            )
+        version = self._read_bytes(self.VERSION_SIZE)
+        try:
+            int(version)
+        except ValueError:
+            raise ValueError("Invalid RDB file: wrong version format")
+
+    def _parse_metadata(self):
+        metadata = {}
+
+        while True:
+            type_byte = self._read_byte()
+            if type_byte != self.METADATA_FIELD_MARKER:
+                # Go back one position - we still want to read this down the line
+                self.pos -= 1
+                break
+
+            key = self._parse_string()
+            value = self._parse_string()
+            metadata[key] = value
+
+        return metadata
+
+    def _parse_database_subsection(self):
+        database_start_marker = self._read_byte()
+        if database_start_marker != self.DATABASE_START_MARKER:
+            raise RDBProtocolError(
+                f"Expected to find database start marker, found: {hex(database_start_marker)}"
+            )
+
+        _database_index = self._read_byte()
+        hash_table_marker = self._read_byte()
+        if hash_table_marker != self.HASH_TABLE_MARKER:
+            raise RDBProtocolError(
+                f"Expected to find hash table marker, found: {hex(hash_table_marker)}"
+            )
+        _kv_hash_table_size = self._read_byte()
+        _expiry_hash_table_size = self._read_byte()
+
+    def _parse_key_value_pairs(self):
+        result = {}
+
+        while True:
+            type_byte = self._read_byte()
+            if type_byte == self.EOF_MARKER:
+                break
+
+            key = self._parse_string()
+            value = self._parse_string()
+            result[key] = value
+
+        return result
+
+    def _parse_string(self):
+        length_type = self._read_byte()
+        length, data_type = self._parse_length(length_type)
+        data = self._read_bytes(length)
+
+        match data_type:
+            case builtins.int:
+                return int.from_bytes(data)
+            case builtins.str:
+                return data.decode()
+            case _:
+                raise RDBProtocolError("Unexpected data type when parsing string")
+
+    def _parse_length(self, byte: int) -> tuple[int, str | int]:
+        # https://rdb.fnordig.de/file_format.html#length-encoding
+
+        top_2_bits = (byte & 0b11000000) >> 6
+        if top_2_bits == 0b00:
+            # See "Length Encoding" - the 6 LSBs represent the length
+            return byte & 0b00111111, str
+        elif top_2_bits == 0b11:
+            # https://rdb.fnordig.de/file_format.html#string-encoding
+            # See "Integers as String" - the 6 LSBs will determine the length
+            lower_six_bits = byte & 0b00111111
+            if lower_six_bits == 0b00:
+                # An 8-bit integer follows
+                return 1, int
+            elif lower_six_bits == 0b01:
+                # A 16-bit integer follows
+                return 2, int
+            elif lower_six_bits == 0b10:
+                # A 32-bit integer follows
+                return 4, int
+            else:
+                raise RDBProtocolError(
+                    f"Unexpected lower six bits for length type byte: {bin(lower_six_bits)}"
+                )
+        else:
+            raise RDBProtocolError(f"Malformed length type byte: {byte}")
+
+    def _read_bytes(self, n: int) -> bytes:
+        data = self.buffer[self.pos : self.pos + n]
+        self.pos += n
+        return data
+
+    def _read_byte(self) -> int:
+        return self._read_bytes(1)[0]

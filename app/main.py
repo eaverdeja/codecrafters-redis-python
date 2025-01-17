@@ -1,8 +1,9 @@
 import asyncio
 import argparse
 from dataclasses import dataclass
+from pathlib import Path
 
-from .parsers import RedisProtocolParser
+from .parsers import RedisProtocolParser, RDBParser
 from .encoders import encode_bulk_string, encode_simple_string, encode_array
 from .datastore import Datastore
 from .constants import BUFFER_SIZE_BYTES
@@ -48,8 +49,20 @@ class RedisServer:
                 else:
                     raise Exception("Unknown config")
                 response = encode_array(data)
+            case ["KEYS", _pattern]:
+                file_path = Path(self.rdb_config.directory) / self.rdb_config.filename
+                try:
+                    parser = RDBParser.from_file(file_path)
+                    records = parser.parse()
+                except FileNotFoundError:
+                    # If the file does not exist,
+                    # treat it as an empty DB
+                    records = {}
+
+                keys = list(records.keys()) + list(self.datastore.keys())
+                response = encode_array([encode_bulk_string(key) for key in keys])
             case _:
-                raise Exception("Unsupported command")
+                raise Exception(f"Unsupported command: {query}")
 
         return response
 

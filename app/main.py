@@ -17,11 +17,20 @@ class RDBConfig:
 
 
 class RedisServer:
-    def __init__(self, port: int, datastore: Datastore, rdb_config: RDBConfig):
+    def __init__(
+        self,
+        port: int,
+        replica_of: str | None,
+        datastore: Datastore,
+        rdb_config: RDBConfig,
+    ):
         self.port = port
         self.datastore = datastore
         self.rdb_config = rdb_config
         self.server: RedisServer = None
+        self.info = {"role": "master"}
+        if replica_of:
+            self.info["role"] = "slave"
 
         # Merge RDB with in-memory datastore
         records = self._get_records_from_rdb()
@@ -62,9 +71,7 @@ class RedisServer:
 
                 response = encode_array([encode_bulk_string(key) for key in keys])
             case ["INFO", _section]:
-                info = {"role": "master"}
-
-                encoded_info = [f"{key}:{value}" for key, value in info.items()]
+                encoded_info = [f"{key}:{value}" for key, value in self.info.items()]
                 response = encode_bulk_string("\n".join(encoded_info))
             case _:
                 raise Exception(f"Unsupported command: {query}")
@@ -120,10 +127,16 @@ if __name__ == "__main__":
     parser.add_argument(
         "--port", type=int, help="The port to run on. Defaults to 6379", default=6379
     )
+    parser.add_argument(
+        "--replicaof",
+        type=str,
+        help="Master host and port information, used for replicas",
+    )
     args = parser.parse_args()
 
     server = RedisServer(
         port=args.port,
+        replica_of=args.replicaof,
         datastore=Datastore(),
         rdb_config=RDBConfig(directory=args.dir, filename=args.dbfilename),
     )

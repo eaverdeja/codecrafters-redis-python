@@ -77,6 +77,14 @@ class CommandHandler:
                     )
                 )
                 return encode_simple_string("OK")
+            case ["REPLCONF", "GETACK", "*"]:
+                return encode_array(
+                    [
+                        encode_bulk_string("REPLCONF"),
+                        encode_bulk_string("ACK"),
+                        encode_bulk_string("0"),
+                    ]
+                )
             case ["PSYNC", "?", "-1"]:
                 return encode_simple_string(
                     f"FULLRESYNC {self.server_info.master_replid} {self.server_info.master_repl_offset}"

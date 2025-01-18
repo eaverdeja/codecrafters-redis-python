@@ -134,9 +134,14 @@ class ReplicationManager:
             while data := await reader.read(BUFFER_SIZE_BYTES):
                 parser = RedisProtocolParser(data=data)
                 while query := parser.parse():
-                    self.command_handler.handle_command(query, writer)
+                    response = self.command_handler.handle_command(query, writer)
+
+                    if "REPLCONF" in query and "ACK" in response:
+                        writer.write(response.encode())
+                        await writer.drain()
         except Exception as e:
             print(f"Error processing replicated data: {e.__class__.__name__} - {e}")
+            raise
         finally:
             writer.close()
             await writer.wait_closed()

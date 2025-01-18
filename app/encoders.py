@@ -15,7 +15,3 @@ def encode_array(values: list) -> str:
     length = len(values)
     message = "".join(values)
     return f"*{length}{CRLF}{message}"
-
-
-def encode_file(bytes: bytes) -> str:
-    return f"${len(bytes)}{CRLF}{str(bytes)}"

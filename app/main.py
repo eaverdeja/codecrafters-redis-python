@@ -10,7 +10,6 @@ from .encoders import (
     encode_bulk_string,
     encode_simple_string,
     encode_array,
-    encode_file,
 )
 from .datastore import Datastore
 from .constants import BUFFER_SIZE_BYTES

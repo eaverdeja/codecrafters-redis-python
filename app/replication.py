@@ -132,10 +132,9 @@ class ReplicationManager:
         reader, writer = self.master_connection
         try:
             while data := await reader.read(BUFFER_SIZE_BYTES):
-                print(f"reading data from master: {data}")
-                query = RedisProtocolParser(data=data).parse()
-                print(f"handling query: {query}")
-                self.command_handler.handle_command(query, writer)
+                parser = RedisProtocolParser(data=data)
+                while query := parser.parse():
+                    self.command_handler.handle_command(query, writer)
         except Exception as e:
             print(f"Error processing replicated data: {e.__class__.__name__} - {e}")
         finally:

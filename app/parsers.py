@@ -29,7 +29,9 @@ class RedisProtocolParser:
 
         line = self.data.popleft()
 
-        if line.startswith(b"*"):
+        if line == b"":
+            return None
+        elif line.startswith(b"*"):
             return self._parse_array(line)
         elif line.startswith(b"$"):
             return self._parse_bulk_string(line)

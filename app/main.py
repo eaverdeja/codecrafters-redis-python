@@ -38,6 +38,8 @@ class ServerInfo:
 
 class RedisServer:
     info: ServerInfo
+    master_connection: tuple[asyncio.StreamReader, asyncio.StreamWriter] | None
+    replication_task: asyncio.Task | None
 
     def __init__(
         self,
@@ -51,6 +53,8 @@ class RedisServer:
         self.rdb_config = rdb_config
         self.replica_of = replica_of
         self.replicas: dict[tuple, ReplicaConfig] = {}
+        self.replication_task = None
+        self.master_connection = None
 
         self._setup()
 
@@ -184,7 +188,6 @@ class RedisServer:
                     await self._handle_full_resync(writer)
         except Exception as e:
             print(f"Error processing connection: {e.__class__.__name__} - {e}")
-            raise e
         finally:
             writer.close()
             await writer.wait_closed()
@@ -256,20 +259,45 @@ class RedisServer:
         if "FULLRESYNC" not in query:
             raise Exception("Excepted response to be a FULLRESYNC")
 
+        # Wait for the RDB file
+        response = await reader.readline()
+        file_length = response.split(b"$")[-1]
+        await reader.readexactly(int(file_length))
+
+        # Handle incoming data in a separate task to avoid blocking
+        self.replication_task = asyncio.create_task(self._handle_replication_stream())
+
+    async def _handle_replication_stream(self):
+        reader, writer = self.master_connection
+        try:
+            while data := await reader.read(BUFFER_SIZE_BYTES):
+                print(f"reading data from master: {data}")
+                query = RedisProtocolParser(data=data).parse()
+                print(f"handling query: {query}")
+                self._process_query(query, writer)
+        except Exception as e:
+            print(f"Error processing replicated data: {e.__class__.__name__} - {e}")
+        finally:
+            writer.close()
+            await writer.wait_closed()
+
     async def _cleanup(self):
         # Close all replica connections
         for replica_info in self.replicas.values():
-            writer = replica_info["connection"]
+            writer = replica_info.connection
             if not writer.is_closing():
                 writer.close()
                 await writer.wait_closed()
 
         # If we're a replica, close master connection
-        if hasattr(self, "master_connection"):
+        if self.master_connection:
             _, writer = self.master_connection
             if not writer.is_closing():
                 writer.close()
                 await writer.wait_closed()
+
+        if self.replication_task:
+            self.replication_task.cancel()
 
     async def execute(self):
         server = await asyncio.start_server(

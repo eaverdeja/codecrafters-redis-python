@@ -6,7 +6,12 @@ import random
 import string
 
 from .parsers import RedisProtocolParser, RDBParser
-from .encoders import encode_bulk_string, encode_simple_string, encode_array
+from .encoders import (
+    encode_bulk_string,
+    encode_simple_string,
+    encode_array,
+    encode_file,
+)
 from .datastore import Datastore
 from .constants import BUFFER_SIZE_BYTES
 from .utils import Container, calculate_expiry
@@ -111,6 +116,22 @@ class RedisServer:
 
         return response
 
+    async def _handle_full_resync(self, writer: asyncio.StreamWriter):
+        # FULLRESYNC should be handled by sending
+        # the RDB file to the replica.
+        # We'll use an empty RDB file for our purposes.
+        rdb_file_path = Path("./").parent / "empty.rdb"
+        with open(rdb_file_path, "rb") as file:
+            data = file.read()
+
+        # Send the length of the file
+        writer.write(f"${len(data)}\r\n".encode())
+        await writer.drain()
+
+        # Send the actual RDB file
+        writer.write(data)
+        await writer.drain()
+
     def _get_records_from_rdb(self) -> dict[str, Container]:
         if not self.rdb_config.directory or not self.rdb_config.filename:
             return {}
@@ -135,8 +156,12 @@ class RedisServer:
 
                 writer.write(response.encode())
                 await writer.drain()
+
+                if "FULLRESYNC" in response:
+                    await self._handle_full_resync(writer)
         except Exception as e:
             print(f"Error processing connection: {e.__class__.__name__} - {e}")
+            raise e
         finally:
             writer.close()
             await writer.wait_closed()

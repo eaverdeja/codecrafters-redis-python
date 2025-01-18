@@ -31,6 +31,7 @@ class RedisServer:
         self.rdb_config = rdb_config
         self.replica_of = replica_of
         self.info = {}
+        self.replicas = {}
 
         self._setup()
 
@@ -50,7 +51,7 @@ class RedisServer:
         for key, value in records.items():
             self.datastore[key] = value
 
-    def _process_query(self, query: list[str]) -> str:
+    def _process_query(self, query: list[str], writer: asyncio.StreamWriter) -> str:
         match query:
             case ["PING"]:
                 response = encode_simple_string("PONG")
@@ -86,6 +87,21 @@ class RedisServer:
             case ["INFO", _section]:
                 encoded_info = [f"{key}:{value}" for key, value in self.info.items()]
                 response = encode_bulk_string("\n".join(encoded_info))
+            case ["REPLCONF", "listening-port", port]:
+                client_addr = writer.get_extra_info("peername")
+                self.replicas[client_addr] = {
+                    "port": port,
+                    "connection": writer,
+                    "capabilities": set(),
+                }
+                response = encode_simple_string("OK")
+            case ["REPLCONF", "capa", *capabilities]:
+                client_addr = writer.get_extra_info("peername")
+                if client_addr in self.replicas:
+                    self.replicas[client_addr]["capabilities"].update(capabilities)
+                    response = encode_simple_string("OK")
+                else:
+                    raise Exception("Unknown replica trying to set capabilities")
             case _:
                 raise Exception(f"Unsupported command: {query}")
 
@@ -111,7 +127,7 @@ class RedisServer:
         try:
             while data := await reader.read(BUFFER_SIZE_BYTES):
                 query = RedisProtocolParser(data=data).parse()
-                response = self._process_query(query)
+                response = self._process_query(query, writer)
 
                 writer.write(response.encode())
                 await writer.drain()
@@ -123,11 +139,69 @@ class RedisServer:
 
     async def _connect_to_master(self):
         host, port = self.replica_of.split(" ")
-        _reader, writer = await asyncio.open_connection(host, port)
+        reader, writer = await asyncio.open_connection(host, port)
+        self.master_connection = (reader, writer)
 
+        # 1st part of the handshake - send a PING
         request = encode_array([encode_simple_string("PING")])
         writer.write(request.encode())
         await writer.drain()
+
+        # Wait for the pong
+        response = await reader.readline()
+        query = RedisProtocolParser(data=response).parse()
+        if query != "PONG":
+            raise Exception("Excepted response to be a PONG command")
+
+        # 2nd part of the handshake - send the first REPLCONF
+        request = encode_array(
+            [
+                encode_bulk_string("REPLCONF"),
+                encode_bulk_string("listening-port"),
+                encode_bulk_string(str(self.port)),
+            ]
+        )
+        writer.write(request.encode())
+        await writer.drain()
+
+        # Wait for the OK
+        response = await reader.readline()
+        query = RedisProtocolParser(data=response).parse()
+        if query != "OK":
+            raise Exception("Excepted response to be an OK")
+
+        # 3rd part of the handshake - send the second REPLCONF
+        request = encode_array(
+            [
+                encode_bulk_string("REPLCONF"),
+                encode_bulk_string("capa"),
+                encode_bulk_string("psync2"),
+            ]
+        )
+        writer.write(request.encode())
+        await writer.drain()
+
+        # Wait for the OK
+        response = await reader.readline()
+        query = RedisProtocolParser(data=response).parse()
+        if query != "OK":
+            raise Exception("Excepted response to be an OK")
+
+    async def _cleanup(self):
+        # Close all replica connections
+        for replica_info in self.replicas.values():
+            writer = replica_info["connection"]
+            if not writer.is_closing():
+                print("closing replica writer")
+                writer.close()
+                await writer.wait_closed()
+
+        # If we're a replica, close master connection
+        if hasattr(self, "master_connection"):
+            _, writer = self.master_connection
+            if not writer.is_closing():
+                writer.close()
+                await writer.wait_closed()
 
     async def execute(self):
         server = await asyncio.start_server(
@@ -141,6 +215,10 @@ class RedisServer:
             await server.serve_forever()
         except asyncio.CancelledError:
             print("Shutting down server")
+            self._cleanup()
+        finally:
+            server.close()
+            await server.wait_closed()
 
 
 if __name__ == "__main__":

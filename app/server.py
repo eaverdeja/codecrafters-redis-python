@@ -65,16 +65,17 @@ class RedisServer:
     ):
         try:
             while data := await reader.read(BUFFER_SIZE_BYTES):
-                query = RedisProtocolParser(data=data).parse()
-                response = self.command_handler.handle_command(query, writer)
+                parser = RedisProtocolParser(data=data)
+                while query := parser.parse():
+                    response = self.command_handler.handle_command(query, writer)
 
-                writer.write(response.encode())
-                await writer.drain()
+                    writer.write(response.encode())
+                    await writer.drain()
 
-                if "SET" in query and "OK" in response:
-                    await self.replication_manager.handle_replication(data)
-                if "FULLRESYNC" in response:
-                    await self.replication_manager.handle_full_resync(writer)
+                    if "SET" in query and "OK" in response:
+                        await self.replication_manager.handle_replication(data)
+                    if "FULLRESYNC" in response:
+                        await self.replication_manager.handle_full_resync(writer)
         except Exception as e:
             print(f"Error processing connection: {e.__class__.__name__} - {e}")
         finally:

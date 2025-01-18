@@ -1,6 +1,6 @@
 import asyncio
 import argparse
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 from pathlib import Path
 import random
 import string
@@ -22,7 +22,23 @@ class RDBConfig:
     filename: str
 
 
+@dataclass
+class ReplicaConfig:
+    port: int
+    connection: asyncio.StreamWriter
+    capabilities: set
+
+
+@dataclass
+class ServerInfo:
+    role: str
+    master_replid: str | None = None
+    master_repl_offset: str | None = None
+
+
 class RedisServer:
+    info: ServerInfo
+
     def __init__(
         self,
         port: int,
@@ -34,21 +50,20 @@ class RedisServer:
         self.datastore = datastore
         self.rdb_config = rdb_config
         self.replica_of = replica_of
-        self.info = {}
-        self.replicas = {}
+        self.replicas: dict[tuple, ReplicaConfig] = {}
 
         self._setup()
 
     def _setup(self):
         if self.replica_of:
-            self.info["role"] = "slave"
+            self.info = ServerInfo(role="slave")
         else:
-            self.info["role"] = "master"
+            self.info = ServerInfo(role="master")
 
-        if self.info["role"] == "master":
+        if self.info.role == "master":
             alphanumerics = string.ascii_letters + string.digits
-            self.info["master_replid"] = "".join(random.choices(alphanumerics, k=40))
-            self.info["master_repl_offset"] = 0
+            self.info.master_replid = "".join(random.choices(alphanumerics, k=40))
+            self.info.master_repl_offset = 0
 
         # Merge RDB with in-memory datastore
         records = self._get_records_from_rdb()
@@ -89,26 +104,28 @@ class RedisServer:
 
                 response = encode_array([encode_bulk_string(key) for key in keys])
             case ["INFO", _section]:
-                encoded_info = [f"{key}:{value}" for key, value in self.info.items()]
+                encoded_info = [
+                    f"{key}:{value}" for key, value in asdict(self.info).items()
+                ]
                 response = encode_bulk_string("\n".join(encoded_info))
             case ["REPLCONF", "listening-port", port]:
                 client_addr = writer.get_extra_info("peername")
-                self.replicas[client_addr] = {
-                    "port": port,
-                    "connection": writer,
-                    "capabilities": set(),
-                }
+                self.replicas[client_addr] = ReplicaConfig(
+                    port=port,
+                    connection=writer,
+                    capabilities=set(),
+                )
                 response = encode_simple_string("OK")
             case ["REPLCONF", "capa", *capabilities]:
                 client_addr = writer.get_extra_info("peername")
                 if client_addr in self.replicas:
-                    self.replicas[client_addr]["capabilities"].update(capabilities)
+                    self.replicas[client_addr].capabilities.update(capabilities)
                     response = encode_simple_string("OK")
                 else:
                     raise Exception("Unknown replica trying to set capabilities")
             case ["PSYNC", "?", "-1"]:
                 response = encode_simple_string(
-                    f"FULLRESYNC {self.info['master_replid']} {self.info['master_repl_offset']}"
+                    f"FULLRESYNC {self.info.master_replid} {self.info.master_repl_offset}"
                 )
             case _:
                 raise Exception(f"Unsupported command: {query}")
@@ -133,9 +150,8 @@ class RedisServer:
 
     async def _handle_replication(self, data: bytes):
         for replica in self.replicas.values():
-            replica_writer = replica["connection"]
-            replica_writer.write(data)
-            await replica_writer.drain()
+            replica.connection.write(data)
+            await replica.connection.drain()
 
     def _get_records_from_rdb(self) -> dict[str, Container]:
         if not self.rdb_config.directory or not self.rdb_config.filename:

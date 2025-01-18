@@ -131,6 +131,12 @@ class RedisServer:
         writer.write(data)
         await writer.drain()
 
+    async def _handle_replication(self, data: bytes):
+        for replica in self.replicas.values():
+            replica_writer = replica["connection"]
+            replica_writer.write(data)
+            await replica_writer.drain()
+
     def _get_records_from_rdb(self) -> dict[str, Container]:
         if not self.rdb_config.directory or not self.rdb_config.filename:
             return {}
@@ -156,6 +162,8 @@ class RedisServer:
                 writer.write(response.encode())
                 await writer.drain()
 
+                if "SET" in query and "OK" in response:
+                    await self._handle_replication(data)
                 if "FULLRESYNC" in response:
                     await self._handle_full_resync(writer)
         except Exception as e:

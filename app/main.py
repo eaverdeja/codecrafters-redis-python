@@ -70,7 +70,7 @@ class RedisServer:
                 if value:
                     response = encode_bulk_string(value)
                 else:
-                    response = encode_bulk_string("-1")
+                    response = encode_bulk_string(None)
             case ["CONFIG", "GET", config]:
                 data = [encode_bulk_string(config)]
                 if config == "dir":
@@ -102,6 +102,10 @@ class RedisServer:
                     response = encode_simple_string("OK")
                 else:
                     raise Exception("Unknown replica trying to set capabilities")
+            case ["PSYNC", "?", "-1"]:
+                response = encode_simple_string(
+                    f"FULLRESYNC {self.info['master_replid']} {self.info['master_repl_offset']}"
+                )
             case _:
                 raise Exception(f"Unsupported command: {query}")
 
@@ -187,12 +191,28 @@ class RedisServer:
         if query != "OK":
             raise Exception("Excepted response to be an OK")
 
+        # PSYNC
+        request = encode_array(
+            [
+                encode_bulk_string("PSYNC"),
+                encode_bulk_string("?"),
+                encode_bulk_string("-1"),
+            ]
+        )
+        writer.write(request.encode())
+        await writer.drain()
+
+        # Wait for the FULLRESYNC response
+        response = await reader.readline()
+        query = RedisProtocolParser(data=response).parse()
+        if "FULLRESYNC" not in query:
+            raise Exception("Excepted response to be a FULLRESYNC")
+
     async def _cleanup(self):
         # Close all replica connections
         for replica_info in self.replicas.values():
             writer = replica_info["connection"]
             if not writer.is_closing():
-                print("closing replica writer")
                 writer.close()
                 await writer.wait_closed()
 
@@ -215,7 +235,7 @@ class RedisServer:
             await server.serve_forever()
         except asyncio.CancelledError:
             print("Shutting down server")
-            self._cleanup()
+            await self._cleanup()
         finally:
             server.close()
             await server.wait_closed()

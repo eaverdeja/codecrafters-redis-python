@@ -136,7 +136,9 @@ class ReplicationManager:
                 parser = RedisProtocolParser(data=data)
                 while query := parser.parse():
                     response = self.command_handler.handle_command(
-                        query, writer, offset
+                        query,
+                        writer=writer,
+                        offset=offset,
                     )
 
                     # Hacky, but get's the job done...

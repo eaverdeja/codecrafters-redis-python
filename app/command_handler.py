@@ -2,7 +2,7 @@ import asyncio
 from dataclasses import asdict
 
 from .datastore import Datastore
-from .config import ServerInfo, RDBConfig
+from .config import ServerInfo, RDBConfig, ReplicaConfig
 from .encoders import (
     encode_bulk_string,
     encode_simple_string,
@@ -29,8 +29,10 @@ class CommandHandler:
     def handle_command(
         self,
         query: list[str],
+        *,
         writer: asyncio.StreamWriter,
         offset: int = 0,
+        replicas: dict | None = None,
     ) -> str:
         match query:
             case ["PING"]:
@@ -96,6 +98,6 @@ class CommandHandler:
                     f"FULLRESYNC {self.server_info.master_replid} {self.server_info.master_repl_offset}"
                 )
             case ["WAIT", _num_replicas, _timeout]:
-                return encode_integer(0)
+                return encode_integer(len(replicas.values()))
             case _:
                 raise Exception(f"Unsupported command: {query}")

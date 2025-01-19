@@ -66,7 +66,11 @@ class RedisServer:
             while data := await reader.read(BUFFER_SIZE_BYTES):
                 parser = RedisProtocolParser(data=data)
                 while query := parser.parse():
-                    response = self.command_handler.handle_command(query, writer)
+                    response = self.command_handler.handle_command(
+                        query,
+                        writer=writer,
+                        replicas=self.replication_manager.replicas,
+                    )
 
                     writer.write(response.encode())
                     await writer.drain()

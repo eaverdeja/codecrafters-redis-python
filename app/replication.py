@@ -131,10 +131,19 @@ class ReplicationManager:
 
         reader, writer = self.master_connection
         try:
+            offset = 0
             while data := await reader.read(BUFFER_SIZE_BYTES):
                 parser = RedisProtocolParser(data=data)
                 while query := parser.parse():
-                    response = self.command_handler.handle_command(query, writer)
+                    response = self.command_handler.handle_command(
+                        query, writer, offset
+                    )
+
+                    # Hacky, but get's the job done...
+                    handled_command = encode_array(
+                        [encode_bulk_string(piece) for piece in query]
+                    )
+                    offset += len(handled_command)
 
                     if "REPLCONF" in query and "ACK" in response:
                         writer.write(response.encode())
@@ -159,7 +168,9 @@ class ReplicationManager:
         port = event.data["port"]
         connection = event.data["connection"]
         self.replicas[addr] = ReplicaConfig(
-            port=port, connection=connection, capabilities=set()
+            port=port,
+            connection=connection,
+            capabilities=set(),
         )
 
     def _handle_replica_capabilities(self, event: RedisEvent):

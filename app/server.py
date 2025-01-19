@@ -33,8 +33,6 @@ class RedisServer:
             self.info.master_replid = "".join(random.choices(alphanumerics, k=40))
             self.info.master_repl_offset = 0
 
-        self._load_rdb()
-
         self.event_bus = EventBus()
         self.command_handler = CommandHandler(
             server_info=self.info,
@@ -47,6 +45,7 @@ class RedisServer:
             event_bus=self.event_bus,
             command_handler=self.command_handler,
         )
+        self._load_rdb()
 
     def _load_rdb(self):
         if not self.rdb_config.directory or not self.rdb_config.filename:

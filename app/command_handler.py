@@ -25,7 +25,12 @@ class CommandHandler:
         self.datastore = datastore
         self.event_bus = event_bus
 
-    def handle_command(self, query: list[str], writer: asyncio.StreamWriter) -> str:
+    def handle_command(
+        self,
+        query: list[str],
+        writer: asyncio.StreamWriter,
+        offset: int = 0,
+    ) -> str:
         match query:
             case ["PING"]:
                 return encode_simple_string("PONG")
@@ -82,7 +87,7 @@ class CommandHandler:
                     [
                         encode_bulk_string("REPLCONF"),
                         encode_bulk_string("ACK"),
-                        encode_bulk_string("0"),
+                        encode_bulk_string(str(offset)),
                     ]
                 )
             case ["PSYNC", "?", "-1"]:

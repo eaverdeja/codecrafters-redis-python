@@ -43,6 +43,8 @@ class ReplicationManager:
             replica.connection.write(data)
             await replica.connection.drain()
 
+        self.info.master_repl_offset += len(data)
+
     async def connect_to_master(self, replica_of: str, port: int):
         host, master_port = replica_of.split(" ")
         reader, writer = await asyncio.open_connection(host, master_port)

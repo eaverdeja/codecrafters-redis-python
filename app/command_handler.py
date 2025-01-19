@@ -7,6 +7,7 @@ from .encoders import (
     encode_bulk_string,
     encode_simple_string,
     encode_array,
+    encode_integer,
 )
 from .utils import Container, calculate_expiry
 from .events import EventBus, RedisEvent
@@ -94,5 +95,7 @@ class CommandHandler:
                 return encode_simple_string(
                     f"FULLRESYNC {self.server_info.master_replid} {self.server_info.master_repl_offset}"
                 )
+            case ["WAIT", _num_replicas, _timeout]:
+                return encode_integer(0)
             case _:
                 raise Exception(f"Unsupported command: {query}")

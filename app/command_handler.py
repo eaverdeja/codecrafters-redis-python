@@ -51,6 +51,13 @@ class CommandHandler:
             case ["GET", key]:
                 value = self.datastore[key]
                 return encode_bulk_string(value if value else None)
+            case ["TYPE", key]:
+                value = self.datastore[key]
+                return (
+                    encode_simple_string("string")
+                    if value
+                    else encode_simple_string("none")
+                )
             case ["CONFIG", "GET", config]:
                 data = [encode_bulk_string(config)]
                 if config == "dir":
@@ -120,5 +127,7 @@ class CommandHandler:
                     await asyncio.sleep(0.01)
 
                 return encode_integer(len(caught_up_replicas))
+            case ["COMMAND", "DOCS"]:
+                return encode_simple_string("not_implemented")
             case _:
                 raise Exception(f"Unsupported command: {query}")

@@ -66,10 +66,19 @@ class RedisServer:
             while data := await reader.read(BUFFER_SIZE_BYTES):
                 parser = RedisProtocolParser(data=data)
                 while query := parser.parse():
-                    response = self.command_handler.handle_command(
+                    if "REPLCONF" in query and "ACK" in query:
+                        self.replication_manager.update_replica_offset(
+                            offset=int(query[-1]),
+                            connection=writer,
+                        )
+                        # No need to process this query as it comes from the replica
+                        continue
+
+                    response = await self.command_handler.handle_command(
                         query,
                         writer=writer,
                         replicas=self.replication_manager.replicas,
+                        offset=self.info.master_repl_offset,
                     )
 
                     writer.write(response.encode())
@@ -79,8 +88,10 @@ class RedisServer:
                         await self.replication_manager.handle_replication(data)
                     if "FULLRESYNC" in response:
                         await self.replication_manager.handle_full_resync(writer)
+                        self.replication_manager.start_replconf_ping(writer)
         except Exception as e:
             print(f"Error processing connection: {e.__class__.__name__} - {e}")
+            raise e
         finally:
             writer.close()
             await writer.wait_closed()

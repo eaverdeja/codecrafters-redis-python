@@ -18,6 +18,7 @@ class ReplicaConfig:
     port: int
     connection: asyncio.StreamWriter
     capabilities: set
+    offset: int
 
 
 @dataclass

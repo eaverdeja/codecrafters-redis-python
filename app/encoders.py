@@ -19,3 +19,7 @@ def encode_array(values: list) -> str:
     length = len(values)
     message = "".join(values)
     return f"*{length}{CRLF}{message}"
+
+
+def encode_error(message: str) -> str:
+    return f"-ERR {message}{CRLF}"

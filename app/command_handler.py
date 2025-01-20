@@ -2,13 +2,14 @@ import asyncio
 from dataclasses import asdict
 import time
 
-from .datastore import Datastore
+from .datastore import Datastore, EnqueueError
 from .config import ServerInfo, RDBConfig
 from .encoders import (
     encode_bulk_string,
     encode_simple_string,
     encode_array,
     encode_integer,
+    encode_error,
 )
 from .utils import Container, calculate_expiry
 from .events import EventBus, RedisEvent
@@ -56,7 +57,10 @@ class CommandHandler:
                 keys = rest[::2]
                 values = rest[1::2]
                 attributes = dict(zip(keys, values))
-                self.datastore.enqueue(key, entry_id, attributes)
+                try:
+                    self.datastore.enqueue(key, entry_id, attributes)
+                except EnqueueError as e:
+                    return encode_error(e)
                 return encode_bulk_string(entry_id)
             case ["GET", key]:
                 value = self.datastore[key]

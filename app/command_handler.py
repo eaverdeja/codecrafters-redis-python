@@ -48,16 +48,25 @@ class CommandHandler:
             case ["SET", key, value]:
                 self.datastore[key] = value
                 return encode_simple_string("OK")
+            case ["XADD", key, entry_id, *rest]:
+                if len(rest) % 2 != 0:
+                    raise ValueError(
+                        "Additional arguments must come in pairs (key, value)"
+                    )
+                keys = rest[::2]
+                values = rest[1::2]
+                attributes = dict(zip(keys, values))
+                self.datastore.enqueue(key, entry_id, attributes)
+                return encode_bulk_string(entry_id)
             case ["GET", key]:
                 value = self.datastore[key]
                 return encode_bulk_string(value if value else None)
             case ["TYPE", key]:
-                value = self.datastore[key]
-                return (
-                    encode_simple_string("string")
-                    if value
-                    else encode_simple_string("none")
-                )
+                if self.datastore[key]:
+                    return encode_simple_string("string")
+                if self.datastore.peek(key):
+                    return encode_simple_string("stream")
+                return encode_simple_string("none")
             case ["CONFIG", "GET", config]:
                 data = [encode_bulk_string(config)]
                 if config == "dir":

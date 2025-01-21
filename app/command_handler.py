@@ -1,6 +1,6 @@
 import asyncio
 from dataclasses import asdict
-from collections import deque
+from collections import deque, defaultdict
 import time
 
 from .datastore import Datastore, EntryId, StreamError
@@ -17,8 +17,6 @@ from .events import EventBus, RedisEvent
 
 
 class CommandHandler:
-    WRITE_COMMANDS = ["SET", "INCR", "XADD"]
-
     def __init__(
         self,
         server_info: ServerInfo,
@@ -30,7 +28,9 @@ class CommandHandler:
         self.rdb_config = rdb_config
         self.datastore = datastore
         self.event_bus = event_bus
-        self.command_queue = deque()
+        self.command_queues = defaultdict(deque)
+
+    WRITE_COMMANDS = {"SET", "INCR", "XADD"}
 
     async def handle_command(
         self,
@@ -41,9 +41,10 @@ class CommandHandler:
         replicas: dict | None = None,
     ) -> str:
         query[0] = query[0].upper()
+        command_queue = self.command_queues[writer]
 
-        if self._is_transaction_open and query[0] in self.WRITE_COMMANDS:
-            self.command_queue.append(query)
+        if self._is_transaction_open(writer) and query[0] in self.WRITE_COMMANDS:
+            command_queue.append(query)
             return encode_simple_string("QUEUED")
 
         match query:
@@ -107,6 +108,9 @@ class CommandHandler:
                 )
             case ["GET", key]:
                 value = self.datastore[key]
+                if self._is_transaction_open(writer) and not value:
+                    command_queue.append(query)
+                    return encode_simple_string("QUEUED")
                 return encode_bulk_string(str(value) if value else None)
             case ["TYPE", key]:
                 if self.datastore[key]:
@@ -115,13 +119,25 @@ class CommandHandler:
                     return encode_simple_string("stream")
                 return encode_simple_string("none")
             case ["MULTI"]:
-                self.command_queue.append("MULTI")
+                command_queue.append("MULTI")
                 return encode_simple_string("OK")
             case ["EXEC"]:
-                if len(self.command_queue) > 0:
-                    self.command_queue.popleft()
-                    return encode_array([])
-                return encode_error("EXEC without MULTI")
+                if "MULTI" not in command_queue:
+                    return encode_error("EXEC without MULTI")
+
+                response = []
+                try:
+                    while query := command_queue.popleft():
+                        if query == "MULTI":
+                            continue
+                        result = await self.handle_command(
+                            query, writer=writer, offset=offset, replicas=replicas
+                        )
+                        response.append(result)
+                except IndexError:
+                    # Command queue is empty - we're done here
+                    pass
+                return encode_array(response)
             case ["CONFIG", "GET", config]:
                 data = [encode_bulk_string(config)]
                 if config == "dir":
@@ -295,6 +311,5 @@ class CommandHandler:
 
         return encode_integer(len(caught_up_replicas))
 
-    @property
-    def _is_transaction_open(self) -> bool:
-        return "MULTI" in self.command_queue
+    def _is_transaction_open(self, writer: asyncio.StreamWriter) -> bool:
+        return "MULTI" in self.command_queues[writer]

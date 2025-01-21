@@ -173,13 +173,21 @@ class Datastore(dict):
             return None
 
     def query_from_stream(
-        self, key: str, start: str, end: str | None = None
+        self, key: str, start: str, end: str | None = None, inclusive: bool = True
     ) -> list[StreamEntry]:
         start_entry_id = EntryId.parse(start)
 
-        return [
-            StreamEntry(entry_id=entry_id, attributes=attributes)
-            for entry_id, attributes in self._streams[key].items()
-            if EntryId.parse(entry_id) >= start_entry_id
-            and (end is None or EntryId.parse(entry_id) <= EntryId.parse(end))
-        ]
+        entries = []
+        for entry_id, attributes in self._streams[key].items():
+            parsed_entry_id = EntryId.parse(entry_id)
+
+            # Check if entry is out of bounds
+            if inclusive and parsed_entry_id == start_entry_id:
+                pass
+            elif parsed_entry_id <= start_entry_id:
+                continue
+            if end is not None and parsed_entry_id > EntryId.parse(end):
+                continue
+
+            entries.append(StreamEntry(entry_id=entry_id, attributes=attributes))
+        return entries

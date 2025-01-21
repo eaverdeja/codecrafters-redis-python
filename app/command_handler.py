@@ -83,48 +83,12 @@ class CommandHandler:
                     for entry in self.datastore.query_from_stream(key, start, end)
                 ]
                 return encode_array(entries)
-            case ["XREAD", "streams", *rest]:
-                if len(rest) % 2 != 0:
-                    raise ValueError(
-                        "Additional arguments must come in pairs (stream_key, entry_id)"
-                    )
-                middle = int(len(rest) / 2)
-                stream_keys = rest[:middle]
-                entry_ids = rest[middle:]
-
-                response = []
-                for key, entry_id in zip(stream_keys, entry_ids):
-                    entries = encode_array(
-                        [
-                            encode_array(
-                                [
-                                    encode_bulk_string(entry.entry_id),
-                                    encode_array(
-                                        [
-                                            item
-                                            for key, value in entry.attributes.items()
-                                            for item in (
-                                                encode_bulk_string(key),
-                                                encode_bulk_string(value),
-                                            )
-                                        ]
-                                    ),
-                                ]
-                            )
-                            for entry in self.datastore.query_from_stream(
-                                key, start=entry_id
-                            )
-                        ]
-                    )
-                    response.append(
-                        encode_array(
-                            [
-                                encode_bulk_string(key),
-                                entries,
-                            ]
-                        )
-                    )
-                return encode_array(response)
+            case ["XREAD", "streams", *arguments]:
+                return await self._handle_xread(*arguments)
+            case ["XREAD", "block", blocking_time, "streams", *arguments]:
+                return await self._handle_xread(
+                    *arguments, blocking_time=int(blocking_time)
+                )
             case ["GET", key]:
                 value = self.datastore[key]
                 return encode_bulk_string(value if value else None)
@@ -207,3 +171,58 @@ class CommandHandler:
                 return encode_simple_string("not_implemented")
             case _:
                 raise Exception(f"Unsupported command: {query}")
+
+    async def _handle_xread(self, *rest, blocking_time: int = 0):
+        if len(rest) % 2 != 0:
+            raise ValueError(
+                "Additional arguments must come in pairs (stream_key, entry_id)"
+            )
+        middle = int(len(rest) / 2)
+        stream_keys = rest[:middle]
+        entry_ids = rest[middle:]
+
+        response = []
+        now = time.time()
+        for stream_key, entry_id in zip(stream_keys, entry_ids):
+            stream = self.datastore.query_from_stream(
+                stream_key, start=entry_id, inclusive=False
+            )
+            if blocking_time:
+                while time.time() - now < blocking_time / 10e2:
+                    stream = self.datastore.query_from_stream(
+                        stream_key, start=entry_id, inclusive=False
+                    )
+                    await asyncio.sleep(0.01)
+
+            if len(stream) == 0:
+                return encode_bulk_string(None)
+
+            entries = encode_array(
+                [
+                    encode_array(
+                        [
+                            encode_bulk_string(entry.entry_id),
+                            encode_array(
+                                [
+                                    item
+                                    for entry_key, value in entry.attributes.items()
+                                    for item in (
+                                        encode_bulk_string(entry_key),
+                                        encode_bulk_string(value),
+                                    )
+                                ]
+                            ),
+                        ]
+                    )
+                    for entry in stream
+                ]
+            )
+            response.append(
+                encode_array(
+                    [
+                        encode_bulk_string(stream_key),
+                        entries,
+                    ]
+                )
+            )
+        return encode_array(response)

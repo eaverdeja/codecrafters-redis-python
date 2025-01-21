@@ -2,7 +2,7 @@ import asyncio
 from dataclasses import asdict
 import time
 
-from .datastore import Datastore, EnqueueError
+from .datastore import Datastore, StreamError
 from .config import ServerInfo, RDBConfig
 from .encoders import (
     encode_bulk_string,
@@ -58,8 +58,8 @@ class CommandHandler:
                 values = rest[1::2]
                 attributes = dict(zip(keys, values))
                 try:
-                    self.datastore.enqueue(key, entry_id, attributes)
-                except EnqueueError as e:
+                    self.datastore.add_to_stream(key, entry_id, attributes)
+                except StreamError as e:
                     return encode_error(e)
                 return encode_bulk_string(entry_id)
             case ["GET", key]:

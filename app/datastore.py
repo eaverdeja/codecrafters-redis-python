@@ -1,18 +1,21 @@
 from time import time
-from collections import deque, defaultdict
-from typing import Deque
+from collections import defaultdict, OrderedDict
 
-from .utils import Container, StreamContainer
+from .utils import Container
 
 
-class EnqueueError(Exception):
+class StreamError(Exception):
     pass
+
+
+Attributes = dict[str, str]
+Stream = OrderedDict[str, Attributes]
 
 
 class Datastore(dict):
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self._streams: dict[str, Deque[StreamContainer]] = defaultdict(deque)
+        self._streams: dict[str, Stream] = defaultdict(OrderedDict)
 
     def __getitem__(self, key):
         try:
@@ -30,36 +33,39 @@ class Datastore(dict):
             value = Container(value=value)
         return super().__setitem__(key, value)
 
-    def enqueue(self, key: str, entry_id: str, attributes: dict[str, str]):
-        queue = self._streams[key]
+    def add_to_stream(self, key: str, entry_id: str, attributes: dict[str, str]):
+        stream = self._streams[key]
         time, sequence = entry_id.split("-")
-        time = int(time)
-        sequence = int(sequence)
+        time, sequence = int(time), int(sequence)
 
         if time == 0 and sequence == 0:
-            raise EnqueueError("The ID specified in XADD must be greater than 0-0")
+            raise StreamError("The ID specified in XADD must be greater than 0-0")
 
-        top_item = self.peek(key)
-        if top_item:
-            top_item_time, top_item_sequence = top_item.entry_id.split("-")
-            top_item_time = int(top_item_time)
-            top_item_sequence = int(top_item_sequence)
+        top_item_entry_id = self.peek(key)
+        if top_item_entry_id:
+            top_item_time, top_item_sequence = top_item_entry_id.split("-")
+            top_item_time, top_item_sequence = int(top_item_time), int(
+                top_item_sequence
+            )
             if time < top_item_time:
-                raise EnqueueError(
+                raise StreamError(
                     "The ID specified in XADD is equal or smaller than the target stream top item"
                 )
             elif time == top_item_time and sequence <= top_item_sequence:
-                raise EnqueueError(
+                raise StreamError(
                     "The ID specified in XADD is equal or smaller than the target stream top item"
                 )
 
-        container = StreamContainer(entry_id=entry_id, attributes=attributes)
-        queue.append(container)
+        stream[entry_id] = attributes
         return
 
     def peek(self, key: str):
-        queue = self._streams[key]
+        """
+        Returns the key of the most recent entry on the stream.
+        Returns none if no entries exist in the stream.
+        """
+        stream = self._streams[key]
         try:
-            return queue[-1]
-        except IndexError:
+            return next(reversed(stream))
+        except StopIteration:
             return None

@@ -107,6 +107,8 @@ class CommandHandler:
                 return encode_simple_string("none")
             case ["MULTI"]:
                 return encode_simple_string("OK")
+            case ["EXEC"]:
+                return encode_error("EXEC without MULTI")
             case ["CONFIG", "GET", config]:
                 data = [encode_bulk_string(config)]
                 if config == "dir":

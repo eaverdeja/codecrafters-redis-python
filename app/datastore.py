@@ -2,6 +2,7 @@ from time import time
 from collections import defaultdict, OrderedDict
 from dataclasses import dataclass
 from typing import Self
+from sys import maxsize
 
 from .utils import Container
 
@@ -25,9 +26,16 @@ class EntryId:
         Parse an entry ID for a stream, in the format {time}-{sequence}.
         A single "*" is used when fully auto-generating IDs.
         Uses -1 to represent auto-generated times and sequences (*).
+        Uses -sys.maxsize and sys.maxsize to represent
+        start (-) and end (+) query params, respectively.
         """
         if entry_id == "*":
             return cls(time=-1, sequence=-1)
+        if entry_id == "-":
+            return cls(time=-maxsize, sequence=0)
+        if entry_id == "+":
+            return cls(time=maxsize, sequence=0)
+
         time_str, sequence_str = entry_id.split("-")
         time_int = int(time_str)
         sequence = int(sequence_str) if sequence_str != "*" else -1

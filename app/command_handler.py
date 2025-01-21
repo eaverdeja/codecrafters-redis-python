@@ -51,9 +51,9 @@ class CommandHandler:
                 self.datastore[key] = value
                 return encode_simple_string("OK")
             case ["INCR", key]:
-                new_value = int(self.datastore[key]) + 1
-                self.datastore[key] = new_value
-                return encode_integer(new_value)
+                value = self.datastore[key] if self.datastore[key] else 0
+                self.datastore[key] = int(value) + 1
+                return encode_integer(self.datastore[key])
             case ["XADD", key, entry_id, *rest]:
                 if len(rest) % 2 != 0:
                     raise ValueError(
@@ -95,7 +95,7 @@ class CommandHandler:
                 )
             case ["GET", key]:
                 value = self.datastore[key]
-                return encode_bulk_string(value if value else None)
+                return encode_bulk_string(str(value) if value else None)
             case ["TYPE", key]:
                 if self.datastore[key]:
                     return encode_simple_string("string")

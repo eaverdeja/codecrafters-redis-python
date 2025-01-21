@@ -58,7 +58,7 @@ class CommandHandler:
                 values = rest[1::2]
                 attributes = dict(zip(keys, values))
                 try:
-                    self.datastore.add_to_stream(key, entry_id, attributes)
+                    entry_id = self.datastore.add_to_stream(key, entry_id, attributes)
                 except StreamError as e:
                     return encode_error(e)
                 return encode_bulk_string(entry_id)

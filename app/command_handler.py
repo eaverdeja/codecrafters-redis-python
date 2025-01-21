@@ -50,6 +50,10 @@ class CommandHandler:
             case ["SET", key, value]:
                 self.datastore[key] = value
                 return encode_simple_string("OK")
+            case ["INCR", key]:
+                new_value = int(self.datastore[key]) + 1
+                self.datastore[key] = new_value
+                return encode_integer(new_value)
             case ["XADD", key, entry_id, *rest]:
                 if len(rest) % 2 != 0:
                     raise ValueError(

@@ -1,5 +1,6 @@
 import asyncio
 from dataclasses import asdict
+from collections import deque
 import time
 
 from .datastore import Datastore, EntryId, StreamError
@@ -27,6 +28,7 @@ class CommandHandler:
         self.rdb_config = rdb_config
         self.datastore = datastore
         self.event_bus = event_bus
+        self.command_queue = deque()
 
     async def handle_command(
         self,
@@ -106,8 +108,12 @@ class CommandHandler:
                     return encode_simple_string("stream")
                 return encode_simple_string("none")
             case ["MULTI"]:
+                self.command_queue.append("MULTI")
                 return encode_simple_string("OK")
             case ["EXEC"]:
+                if len(self.command_queue) > 0:
+                    self.command_queue.popleft()
+                    return encode_array([])
                 return encode_error("EXEC without MULTI")
             case ["CONFIG", "GET", config]:
                 data = [encode_bulk_string(config)]

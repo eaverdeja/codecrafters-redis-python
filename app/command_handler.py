@@ -17,6 +17,8 @@ from .events import EventBus, RedisEvent
 
 
 class CommandHandler:
+    WRITE_COMMANDS = ["SET", "INCR", "XADD"]
+
     def __init__(
         self,
         server_info: ServerInfo,
@@ -39,6 +41,11 @@ class CommandHandler:
         replicas: dict | None = None,
     ) -> str:
         query[0] = query[0].upper()
+
+        if self._is_transaction_open and query[0] in self.WRITE_COMMANDS:
+            self.command_queue.append(query)
+            return encode_simple_string("QUEUED")
+
         match query:
             case ["PING"]:
                 return encode_simple_string("PONG")
@@ -287,3 +294,7 @@ class CommandHandler:
             await asyncio.sleep(0.01)
 
         return encode_integer(len(caught_up_replicas))
+
+    @property
+    def _is_transaction_open(self) -> bool:
+        return "MULTI" in self.command_queue

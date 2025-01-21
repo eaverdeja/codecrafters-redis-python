@@ -172,7 +172,7 @@ class CommandHandler:
             case _:
                 raise Exception(f"Unsupported command: {query}")
 
-    async def _handle_xread(self, *rest, blocking_time: int = 0):
+    async def _handle_xread(self, *rest, blocking_time: int = -1):
         if len(rest) % 2 != 0:
             raise ValueError(
                 "Additional arguments must come in pairs (stream_key, entry_id)"
@@ -182,17 +182,14 @@ class CommandHandler:
         entry_ids = rest[middle:]
 
         response = []
-        now = time.time()
         for stream_key, entry_id in zip(stream_keys, entry_ids):
             stream = self.datastore.query_from_stream(
                 stream_key, start=entry_id, inclusive=False
             )
-            if blocking_time:
-                while time.time() - now < blocking_time / 10e2:
-                    stream = self.datastore.query_from_stream(
-                        stream_key, start=entry_id, inclusive=False
-                    )
-                    await asyncio.sleep(0.01)
+            if blocking_time != -1:
+                stream = await self._wait_for_stream(
+                    stream_key, entry_id, blocking_time
+                )
 
             if len(stream) == 0:
                 return encode_bulk_string(None)
@@ -226,3 +223,28 @@ class CommandHandler:
                 )
             )
         return encode_array(response)
+
+    async def _wait_for_stream(
+        self, stream_key: str, entry_id: str, blocking_time: int
+    ):
+        now = time.time()
+        stream = []
+        # Is blocking_time positive?
+        # Then wait for some time
+        if blocking_time > 0:
+            while time.time() - now < blocking_time / 10e2:
+                stream = self.datastore.query_from_stream(
+                    stream_key, start=entry_id, inclusive=False
+                )
+                await asyncio.sleep(0.01)
+            return stream
+
+        # Otherwise wait until we have data
+        while True:
+            stream = self.datastore.query_from_stream(
+                stream_key, start=entry_id, inclusive=False
+            )
+            if len(stream) > 0:
+                break
+            await asyncio.sleep(0.01)
+        return stream

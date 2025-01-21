@@ -52,7 +52,10 @@ class CommandHandler:
                 return encode_simple_string("OK")
             case ["INCR", key]:
                 value = self.datastore[key] if self.datastore[key] else 0
-                self.datastore[key] = int(value) + 1
+                try:
+                    self.datastore[key] = int(value) + 1
+                except ValueError:
+                    return encode_error("value is not an integer or out of range")
                 return encode_integer(self.datastore[key])
             case ["XADD", key, entry_id, *rest]:
                 if len(rest) % 2 != 0:

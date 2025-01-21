@@ -83,6 +83,38 @@ class CommandHandler:
                     for entry in self.datastore.query_from_stream(key, start, end)
                 ]
                 return encode_array(entries)
+            case ["XREAD", "streams", key, entry_id]:
+                entries = encode_array(
+                    [
+                        encode_array(
+                            [
+                                encode_bulk_string(entry.entry_id),
+                                encode_array(
+                                    [
+                                        item
+                                        for key, value in entry.attributes.items()
+                                        for item in (
+                                            encode_bulk_string(key),
+                                            encode_bulk_string(value),
+                                        )
+                                    ]
+                                ),
+                            ]
+                        )
+                        for entry in self.datastore.query_from_stream(
+                            key, start=entry_id
+                        )
+                    ]
+                )
+                response = [
+                    encode_array(
+                        [
+                            encode_bulk_string(key),
+                            entries,
+                        ]
+                    )
+                ]
+                return encode_array(response)
             case ["GET", key]:
                 value = self.datastore[key]
                 return encode_bulk_string(value if value else None)

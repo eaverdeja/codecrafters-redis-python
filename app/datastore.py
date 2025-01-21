@@ -172,13 +172,14 @@ class Datastore(dict):
         except StopIteration:
             return None
 
-    def query_from_stream(self, key: str, start: str, end: str) -> list[StreamEntry]:
+    def query_from_stream(
+        self, key: str, start: str, end: str | None = None
+    ) -> list[StreamEntry]:
         start_entry_id = EntryId.parse(start)
-        end_entry_id = EntryId.parse(end)
 
         return [
             StreamEntry(entry_id=entry_id, attributes=attributes)
             for entry_id, attributes in self._streams[key].items()
             if EntryId.parse(entry_id) >= start_entry_id
-            and EntryId.parse(entry_id) <= end_entry_id
+            and (end is None or EntryId.parse(entry_id) <= EntryId.parse(end))
         ]

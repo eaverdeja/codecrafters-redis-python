@@ -83,37 +83,47 @@ class CommandHandler:
                     for entry in self.datastore.query_from_stream(key, start, end)
                 ]
                 return encode_array(entries)
-            case ["XREAD", "streams", key, entry_id]:
-                entries = encode_array(
-                    [
-                        encode_array(
-                            [
-                                encode_bulk_string(entry.entry_id),
-                                encode_array(
-                                    [
-                                        item
-                                        for key, value in entry.attributes.items()
-                                        for item in (
-                                            encode_bulk_string(key),
-                                            encode_bulk_string(value),
-                                        )
-                                    ]
-                                ),
-                            ]
-                        )
-                        for entry in self.datastore.query_from_stream(
-                            key, start=entry_id
-                        )
-                    ]
-                )
-                response = [
-                    encode_array(
+            case ["XREAD", "streams", *rest]:
+                if len(rest) % 2 != 0:
+                    raise ValueError(
+                        "Additional arguments must come in pairs (stream_key, entry_id)"
+                    )
+                middle = int(len(rest) / 2)
+                stream_keys = rest[:middle]
+                entry_ids = rest[middle:]
+
+                response = []
+                for key, entry_id in zip(stream_keys, entry_ids):
+                    entries = encode_array(
                         [
-                            encode_bulk_string(key),
-                            entries,
+                            encode_array(
+                                [
+                                    encode_bulk_string(entry.entry_id),
+                                    encode_array(
+                                        [
+                                            item
+                                            for key, value in entry.attributes.items()
+                                            for item in (
+                                                encode_bulk_string(key),
+                                                encode_bulk_string(value),
+                                            )
+                                        ]
+                                    ),
+                                ]
+                            )
+                            for entry in self.datastore.query_from_stream(
+                                key, start=entry_id
+                            )
                         ]
                     )
-                ]
+                    response.append(
+                        encode_array(
+                            [
+                                encode_bulk_string(key),
+                                entries,
+                            ]
+                        )
+                    )
                 return encode_array(response)
             case ["GET", key]:
                 value = self.datastore[key]

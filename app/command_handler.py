@@ -2,7 +2,7 @@ import asyncio
 from dataclasses import asdict
 import time
 
-from .datastore import Datastore, StreamError
+from .datastore import Datastore, EntryId, StreamError
 from .config import ServerInfo, RDBConfig
 from .encoders import (
     encode_bulk_string,
@@ -183,12 +183,15 @@ class CommandHandler:
 
         response = []
         for stream_key, entry_id in zip(stream_keys, entry_ids):
+            top_entry_key = self.datastore.peek(stream_key)
+            top_entry = EntryId.parse(top_entry_key) if top_entry_key else None
+
             stream = self.datastore.query_from_stream(
-                stream_key, start=entry_id, inclusive=False
+                stream_key, start=entry_id, inclusive=False, top_entry=top_entry
             )
             if blocking_time != -1:
                 stream = await self._wait_for_stream(
-                    stream_key, entry_id, blocking_time
+                    stream_key, entry_id, blocking_time, top_entry
                 )
 
             if len(stream) == 0:
@@ -225,7 +228,11 @@ class CommandHandler:
         return encode_array(response)
 
     async def _wait_for_stream(
-        self, stream_key: str, entry_id: str, blocking_time: int
+        self,
+        stream_key: str,
+        entry_id: str,
+        blocking_time: int,
+        top_entry: EntryId | None,
     ):
         now = time.time()
         stream = []
@@ -234,7 +241,10 @@ class CommandHandler:
         if blocking_time > 0:
             while time.time() - now < blocking_time / 10e2:
                 stream = self.datastore.query_from_stream(
-                    stream_key, start=entry_id, inclusive=False
+                    stream_key,
+                    start=entry_id,
+                    inclusive=False,
+                    top_entry=top_entry,
                 )
                 await asyncio.sleep(0.01)
             return stream
@@ -242,7 +252,10 @@ class CommandHandler:
         # Otherwise wait until we have data
         while True:
             stream = self.datastore.query_from_stream(
-                stream_key, start=entry_id, inclusive=False
+                stream_key,
+                start=entry_id,
+                inclusive=False,
+                top_entry=top_entry,
             )
             if len(stream) > 0:
                 break

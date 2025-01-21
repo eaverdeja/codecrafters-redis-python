@@ -21,13 +21,14 @@ class EntryId:
     sequence: int
 
     @classmethod
-    def parse(cls, entry_id: str):
+    def parse(cls, entry_id: str, top_entry: Self | None = None):
         """
         Parse an entry ID for a stream, in the format {time}-{sequence}.
         A single "*" is used when fully auto-generating IDs.
         Uses -1 to represent auto-generated times and sequences (*).
         Uses -sys.maxsize and sys.maxsize to represent
         start (-) and end (+) query params, respectively.
+        ($) as a start position will replicate the top entry's information.
         """
         if entry_id == "*":
             return cls(time=-1, sequence=-1)
@@ -35,6 +36,12 @@ class EntryId:
             return cls(time=-maxsize, sequence=0)
         if entry_id == "+":
             return cls(time=maxsize, sequence=0)
+        if entry_id == "$":
+            if not top_entry:
+                raise StreamError(
+                    "Expected top_entry to be supplied when parsing $ for XREAD"
+                )
+            return cls(time=top_entry.time, sequence=top_entry.sequence)
 
         time_str, sequence_str = entry_id.split("-")
         time_int = int(time_str)
@@ -173,9 +180,14 @@ class Datastore(dict):
             return None
 
     def query_from_stream(
-        self, key: str, start: str, end: str | None = None, inclusive: bool = True
+        self,
+        key: str,
+        start: str,
+        end: str | None = None,
+        inclusive: bool = True,
+        top_entry: EntryId | None = None,
     ) -> list[StreamEntry]:
-        start_entry_id = EntryId.parse(start)
+        start_entry_id = EntryId.parse(start, top_entry=top_entry)
 
         entries = []
         for entry_id, attributes in self._streams[key].items():

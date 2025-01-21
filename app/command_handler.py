@@ -3,7 +3,7 @@ from dataclasses import asdict
 import time
 
 from .datastore import Datastore, EntryId, StreamError
-from .config import ServerInfo, RDBConfig
+from .config import ReplicaConfig, ServerInfo, RDBConfig
 from .encoders import (
     encode_bulk_string,
     encode_simple_string,
@@ -146,27 +146,7 @@ class CommandHandler:
                     f"FULLRESYNC {self.server_info.master_replid} {self.server_info.master_repl_offset}"
                 )
             case ["WAIT", num_replicas, timeout]:
-                num_replicas = int(num_replicas)
-                timeout = int(timeout)
-
-                now = time.time()
-                caught_up_replicas = set()
-                while True:
-                    for replica in replicas.values():
-                        if replica.offset >= offset:
-                            caught_up_replicas.add(replica.port)
-
-                    if len(caught_up_replicas) >= num_replicas:
-                        break
-
-                    # time is in seconds and timeout is in milliseconds
-                    if time.time() - now >= timeout / 1e3:
-                        break
-
-                    # sleep a bit before checking again
-                    await asyncio.sleep(0.01)
-
-                return encode_integer(len(caught_up_replicas))
+                return await self._handle_wait(replicas, offset, num_replicas, timeout)
             case ["COMMAND", "DOCS"]:
                 return encode_simple_string("not_implemented")
             case _:
@@ -261,3 +241,32 @@ class CommandHandler:
                 break
             await asyncio.sleep(0.01)
         return stream
+
+    async def _handle_wait(
+        self,
+        replicas: dict[str, ReplicaConfig],
+        master_offset: int,
+        num_replicas: str,
+        timeout: str,
+    ):
+        num_replicas = int(num_replicas)
+        timeout = int(timeout)
+
+        now = time.time()
+        caught_up_replicas = set()
+        while True:
+            for replica in replicas.values():
+                if replica.offset >= master_offset:
+                    caught_up_replicas.add(replica.port)
+
+            if len(caught_up_replicas) >= num_replicas:
+                break
+
+            # time is in seconds and timeout is in milliseconds
+            if time.time() - now >= timeout / 1e3:
+                break
+
+            # sleep a bit before checking again
+            await asyncio.sleep(0.01)
+
+        return encode_integer(len(caught_up_replicas))

@@ -138,6 +138,11 @@ class CommandHandler:
                     # Command queue is empty - we're done here
                     pass
                 return encode_array(response)
+            case ["DISCARD"]:
+                if "MULTI" not in command_queue:
+                    return encode_error("DISCARD without MULTI")
+                command_queue.clear()
+                return encode_simple_string("OK")
             case ["CONFIG", "GET", config]:
                 data = [encode_bulk_string(config)]
                 if config == "dir":

@@ -105,6 +105,8 @@ class CommandHandler:
                 if self.datastore.peek(key):
                     return encode_simple_string("stream")
                 return encode_simple_string("none")
+            case ["MULTI"]:
+                return encode_simple_string("OK")
             case ["CONFIG", "GET", config]:
                 data = [encode_bulk_string(config)]
                 if config == "dir":

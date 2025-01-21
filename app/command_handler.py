@@ -36,6 +36,7 @@ class CommandHandler:
         offset: int = 0,
         replicas: dict | None = None,
     ) -> str:
+        query[0] = query[0].upper()
         match query:
             case ["PING"]:
                 return encode_simple_string("PONG")
@@ -62,6 +63,26 @@ class CommandHandler:
                 except StreamError as e:
                     return encode_error(e)
                 return encode_bulk_string(entry_id)
+            case ["XRANGE", key, start, end]:
+                entries = [
+                    encode_array(
+                        [
+                            encode_bulk_string(entry.entry_id),
+                            encode_array(
+                                [
+                                    item
+                                    for key, value in entry.attributes.items()
+                                    for item in (
+                                        encode_bulk_string(key),
+                                        encode_bulk_string(value),
+                                    )
+                                ]
+                            ),
+                        ]
+                    )
+                    for entry in self.datastore.query_from_stream(key, start, end)
+                ]
+                return encode_array(entries)
             case ["GET", key]:
                 value = self.datastore[key]
                 return encode_bulk_string(value if value else None)
